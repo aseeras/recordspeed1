@@ -1,0 +1,121 @@
+name: iOS run
+
+# Installs the latest successful "iOS build" simulator app, runs it in an iPhone
+# simulator against the local backend, and uploads screenshots of each screen.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/ios-run.yml"
+  workflow_run:
+    workflows: ["iOS build"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  simulator:
+    name: Run in iOS Simulator
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BUNDLE_ID: com.aseeras.eventsboard
+      SHOTS: ${{ github.workspace }}/screenshots
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Start the backend
+        working-directory: backend
+        run: |
+          npm ci
+          nohup node app/index.js > "$RUNNER_TEMP/backend.log" 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://localhost:3000/events > /dev/null && break; sleep 1; done
+          curl -sf http://localhost:3000/events | head -c 300; echo
+
+      - name: Download the simulator app
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            RUN_ID=${{ github.event.workflow_run.id }}
+          else
+            RUN_ID=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ios-build.yml --branch "$GITHUB_REF_NAME" \
+              --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+          fi
+          echo "Using iOS build run $RUN_ID"
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name EventsBoard-simulator --dir "$RUNNER_TEMP/app"
+          cd "$RUNNER_TEMP/app" && ditto -x -k EventsBoard-simulator.zip . && ls
+
+      - name: Boot an iPhone simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          phones = [d for rt, ds in devices.items() if "iOS" in rt for d in ds if d["name"].startswith("iPhone")]
+          print(phones[-1]["udid"])')
+          xcrun simctl list devices | grep "$UDID"
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+
+      - name: Install and launch the app
+        run: |
+          mkdir -p "$SHOTS"
+          APP=$(ls -d "$RUNNER_TEMP"/app/*.app | head -n 1)
+          xcrun simctl install "$UDID" "$APP"
+          xcrun simctl launch "$UDID" "$BUNDLE_ID"
+          sleep 20
+          xcrun simctl io "$UDID" screenshot "$SHOTS/1-home.png"
+
+      - name: Event detail
+        run: |
+          xcrun simctl openurl "$UDID" "eventsboard://events/2"
+          sleep 8
+          xcrun simctl io "$UDID" screenshot "$SHOTS/2-event-detail.png"
+
+      - name: Create event form
+        run: |
+          xcrun simctl openurl "$UDID" "eventsboard://events/new"
+          sleep 6
+          xcrun simctl io "$UDID" screenshot "$SHOTS/3-new-event.png"
+
+      - name: List after creating an event
+        run: |
+          curl -sf -X POST http://localhost:3000/events -H 'Content-Type: application/json' -d '{
+            "event": {
+              "title": "Jazz Night at Parque Rodó",
+              "description": "Open-air jazz with local bands.",
+              "eventImage": "https://picsum.photos/id/1025/800/450",
+              "location": "Parque Rodó, Montevideo",
+              "dates": ["06/12/2015 20:00", "06/13/2015 20:00"]
+            }
+          }'
+          echo
+          xcrun simctl terminate "$UDID" "$BUNDLE_ID" || true
+          xcrun simctl launch "$UDID" "$BUNDLE_ID"
+          sleep 15
+          xcrun simctl io "$UDID" screenshot "$SHOTS/4-home-after-create.png"
+
+      - name: Collect app logs
+        if: always()
+        run: |
+          mkdir -p "$SHOTS"
+          cp "$RUNNER_TEMP/backend.log" "$SHOTS/backend.log" || true
+          xcrun simctl spawn "$UDID" log show --last 5m --style compact \
+            --predicate 'process CONTAINS "Events" OR subsystem CONTAINS "com.facebook.react"' \
+            > "$SHOTS/app.log" 2>&1 || true
+          tail -n 60 "$SHOTS/app.log" || true
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: EventsBoard-screenshots
+          path: screenshots
+          if-no-files-found: error
