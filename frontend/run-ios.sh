@@ -57,8 +57,12 @@ step "Installing iOS libraries (CocoaPods)"
 echo "export NODE_BINARY=$(command -v node)" > ios/.xcode.env.local
 
 step "Booting the simulator"
-open -a Simulator --args -CurrentDeviceUDID "$UDID"
+# Simulator.app lives inside Xcode; open it by path (it isn't always registered by name).
+SIM_APP="$(xcode-select -p)/Applications/Simulator.app"
 xcrun simctl boot "$UDID" 2>/dev/null || true
+open "$SIM_APP" --args -CurrentDeviceUDID "$UDID" 2>/dev/null \
+  || open -a Simulator 2>/dev/null \
+  || echo "Couldn't open the Simulator window; the app will still be installed and launched."
 xcrun simctl bootstatus "$UDID" -b > /dev/null
 
 step "Building the app (first build takes 5-15 minutes)"
