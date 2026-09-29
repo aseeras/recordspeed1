@@ -1,28 +1,23 @@
 name: iOS run
 
-# Installs the latest successful "iOS build" simulator app, runs it in an iPhone
-# simulator against the local backend, and uploads screenshots of each screen.
+# Runs frontend/run-ios.sh (the same one-command launcher people use on their Macs) with the
+# newest Xcode on the runner, then checks that the app actually launched and loaded events.
 on:
   workflow_dispatch:
   push:
     paths:
+      - "frontend/**"
       - ".github/workflows/ios-run.yml"
-  workflow_run:
-    workflows: ["iOS build"]
-    types: [completed]
 
 permissions:
   contents: read
-  actions: read
 
 jobs:
   simulator:
     name: Run in iOS Simulator
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
-      GH_TOKEN: ${{ github.token }}
       BUNDLE_ID: com.aseeras.eventsboard
       SHOTS: ${{ github.workspace }}/screenshots
     steps:
@@ -32,90 +27,58 @@ jobs:
         with:
           node-version: 22
 
-      - name: Start the backend
-        working-directory: backend
+      - name: Use the newest Xcode on the runner
         run: |
-          npm ci
-          nohup node app/index.js > "$RUNNER_TEMP/backend.log" 2>&1 &
-          for i in $(seq 1 30); do curl -sf http://localhost:3000/events > /dev/null && break; sleep 1; done
-          curl -sf http://localhost:3000/events | head -c 300; echo
+          ls -d /Applications/Xcode*.app
+          XCODE=$(ls -d /Applications/Xcode_*.app | sort -V | tail -n 1)
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
 
-      - name: Download the simulator app
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            RUN_ID=${{ github.event.workflow_run.id }}
-          else
-            RUN_ID=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ios-build.yml --branch "$GITHUB_REF_NAME" \
-              --status success --limit 1 --json databaseId --jq '.[0].databaseId')
-          fi
-          echo "Using iOS build run $RUN_ID"
-          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name EventsBoard-simulator --dir "$RUNNER_TEMP/app"
-          cd "$RUNNER_TEMP/app" && ditto -x -k EventsBoard-simulator.zip . && ls
+      - name: Run the launcher script
+        run: bash frontend/run-ios.sh
 
-      - name: Boot an iPhone simulator
-        run: |
-          UDID=$(xcrun simctl list devices available -j | python3 -c '
-          import json, sys
-          devices = json.load(sys.stdin)["devices"]
-          phones = [d for rt, ds in devices.items() if "iOS" in rt for d in ds if d["name"].startswith("iPhone")]
-          print(phones[-1]["udid"])')
-          xcrun simctl list devices | grep "$UDID"
-          echo "UDID=$UDID" >> "$GITHUB_ENV"
-          xcrun simctl boot "$UDID"
-          xcrun simctl bootstatus "$UDID" -b
-
-      - name: Install and launch the app
+      - name: Check the app launched and loaded events from the backend
         run: |
           mkdir -p "$SHOTS"
-          APP=$(ls -d "$RUNNER_TEMP"/app/*.app | head -n 1)
-          xcrun simctl install "$UDID" "$APP"
-          xcrun simctl launch "$UDID" "$BUNDLE_ID"
+          UDID=$(xcrun simctl list devices booted | grep -m1 -oE '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}')
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
           sleep 20
           xcrun simctl io "$UDID" screenshot "$SHOTS/1-home.png"
+          xcrun simctl spawn "$UDID" log show --last 3m --style compact \
+            --predicate 'process == "EventsBoard"' > "$SHOTS/app.log" 2>&1 || true
+          if grep -q "Application failed to launch" "$SHOTS/app.log"; then
+            grep -m5 "failed to launch" "$SHOTS/app.log"; exit 1
+          fi
+          xcrun simctl spawn "$UDID" launchctl list | grep "$BUNDLE_ID" \
+            || { echo "The app is not running"; exit 1; }
+          grep -m2 "localhost:3000/events" "$SHOTS/app.log" \
+            || { echo "The app never requested events from the backend"; tail -n 50 "$SHOTS/app.log"; exit 1; }
 
-      - name: Event detail
+      - name: Event detail and create screens
         run: |
           xcrun simctl openurl "$UDID" "eventsboard://events/2"
-          sleep 8
-          xcrun simctl io "$UDID" screenshot "$SHOTS/2-event-detail.png"
-
-      - name: Create event form
-        run: |
-          xcrun simctl openurl "$UDID" "eventsboard://events/new"
           sleep 6
+          xcrun simctl io "$UDID" screenshot "$SHOTS/2-event-detail.png"
+          xcrun simctl openurl "$UDID" "eventsboard://events/new"
+          sleep 5
           xcrun simctl io "$UDID" screenshot "$SHOTS/3-new-event.png"
 
-      - name: List after creating an event
+      - name: Demo mode when the backend is stopped
         run: |
-          curl -sf -X POST http://localhost:3000/events -H 'Content-Type: application/json' -d '{
-            "event": {
-              "title": "Jazz Night at Parque Rodó",
-              "description": "Open-air jazz with local bands.",
-              "eventImage": "https://picsum.photos/id/1025/800/450",
-              "location": "Parque Rodó, Montevideo",
-              "dates": ["06/12/2015 20:00", "06/13/2015 20:00"]
-            }
-          }'
-          echo
+          pkill -f "node app/index.js" || true
           xcrun simctl terminate "$UDID" "$BUNDLE_ID" || true
           xcrun simctl launch "$UDID" "$BUNDLE_ID"
           sleep 15
-          xcrun simctl io "$UDID" screenshot "$SHOTS/4-home-after-create.png"
-
-      - name: Collect app logs
-        if: always()
-        run: |
-          mkdir -p "$SHOTS"
-          cp "$RUNNER_TEMP/backend.log" "$SHOTS/backend.log" || true
-          xcrun simctl spawn "$UDID" log show --last 5m --style compact \
-            --predicate 'process CONTAINS "Events" OR subsystem CONTAINS "com.facebook.react"' \
-            > "$SHOTS/app.log" 2>&1 || true
-          tail -n 60 "$SHOTS/app.log" || true
+          xcrun simctl io "$UDID" screenshot "$SHOTS/4-demo-mode.png"
+          xcrun simctl spawn "$UDID" launchctl list | grep "$BUNDLE_ID" \
+            || { echo "The app is not running without the backend"; exit 1; }
 
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: EventsBoard-screenshots
-          path: screenshots
-          if-no-files-found: error
+          path: |
+            screenshots
+            frontend/ios/build/xcodebuild.log
+          if-no-files-found: ignore

@@ -5,14 +5,14 @@ import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'rea
 import { EventCard } from '../components/EventCard.tsx';
 import { FeaturedEvents } from '../components/FeaturedEvents.tsx';
 import { ErrorView, LoadingView } from '../components/StatusView.tsx';
-import { fetchEvents, fetchFeaturedEvents } from '../lib/api.ts';
+import { API_URL, fetchEvents, fetchFeaturedEvents, isUsingDemoData } from '../lib/api.ts';
 import { sortEventsByDate } from '../lib/events.ts';
 import { colors } from '../lib/theme.ts';
 import { useAsync } from '../lib/useAsync.ts';
 
 async function loadHome() {
   const [events, featured] = await Promise.all([fetchEvents(), fetchFeaturedEvents()]);
-  return { events: sortEventsByDate(events), featured: sortEventsByDate(featured) };
+  return { events: sortEventsByDate(events), featured: sortEventsByDate(featured), demo: isUsingDemoData() };
 }
 
 export default function HomeScreen() {
@@ -30,11 +30,19 @@ export default function HomeScreen() {
   const header = useMemo(
     () => (
       <>
+        {data?.demo && (
+          <View style={styles.notice}>
+            <Text style={styles.noticeText}>
+              Showing demo events: the events server at {API_URL} isn't running. Start it with "npm start" in
+              backend/, then pull down to refresh.
+            </Text>
+          </View>
+        )}
         <FeaturedEvents events={data?.featured ?? []} />
         <Text style={styles.heading}>All events</Text>
       </>
     ),
-    [data?.featured],
+    [data?.featured, data?.demo],
   );
 
   return (
@@ -89,6 +97,20 @@ const styles = StyleSheet.create({
   },
   item: {
     paddingHorizontal: 16,
+  },
+  notice: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: '#FFF4D6',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E8C66A',
+  },
+  noticeText: {
+    color: '#6B4E00',
+    fontSize: 13,
+    lineHeight: 18,
   },
   separator: {
     height: 12,

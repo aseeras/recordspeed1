@@ -3,7 +3,7 @@ import React
 import ReactAppDependencyProvider
 
 @main
-class AppDelegate: ExpoAppDelegate {
+class AppDelegate: ExpoAppDelegate, ExpoReactNativeFactoryProvider {
   var window: UIWindow?
 
   var reactNativeDelegate: ExpoReactNativeFactoryDelegate?
@@ -20,13 +20,8 @@ class AppDelegate: ExpoAppDelegate {
     reactNativeDelegate = delegate
     reactNativeFactory = factory
 
-#if os(iOS) || os(tvOS)
-    window = UIWindow(frame: UIScreen.main.bounds)
-    factory.startReactNative(
-      withModuleName: "main",
-      in: window,
-      launchOptions: launchOptions)
-#endif
+    // The window is created by EXExpoAppSceneDelegate (see UIApplicationSceneManifest in Info.plist),
+    // which starts React Native with `reactNativeFactory`.
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }

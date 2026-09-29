@@ -43,6 +43,21 @@ An iOS app (Expo / React Native, TypeScript) for the events board described in t
      EXPO_PUBLIC_API_URL=http://192.168.1.20:3000 npm start
      ```
 
+## Run it in the iOS Simulator with one command (Mac)
+
+Needs Xcode (with the iOS simulator installed), Node.js and CocoaPods
+(`brew install node cocoapods`). Then:
+
+```bash
+cd frontend
+bash run-ios.sh
+```
+
+The script checks your tools, starts the backend, installs dependencies, builds a Release version
+of the app with Xcode (the JavaScript is bundled in, so no Metro server is needed), and launches it
+in the Simulator. If the backend isn't running, the app shows built-in demo events and a notice
+instead of an error.
+
 ## Open and run it in Xcode (Mac)
 
 The native Xcode project is committed in `ios/`. Open **`ios/EventsBoard.xcworkspace`** (the
@@ -81,7 +96,7 @@ Terminal window automatically. If it doesn't, run `npm start` in `frontend/` you
 your own iPhone, plug it in, select it as the destination, and under **Signing & Capabilities** pick
 your Apple ID team. A free Apple ID is enough for your own device.
 
-`npm run ios` does all of the above (pods, build, launch the simulator) in one command.
+`bash run-ios.sh` (above) does all of this in one command.
 
 If you change `app.json` or add a library with native code, regenerate the project with
 `npx expo prebuild --platform ios`.
@@ -126,6 +141,12 @@ npm test            # date parsing, ordering, share message and form validation 
   form asks for an image URL (with a live preview) rather than uploading a photo.
 - **Dates** are picked with the native iOS date/time picker and sent in the backend's
   `MM/DD/YYYY HH:mm` format. Duplicates are ignored.
+- **iOS 27 scene life cycle.** Apps built with the iOS 27 SDK must use the UIKit scene life cycle
+  or they abort at launch. `plugins/withSceneLifecycle.js` registers Expo's `EXExpoAppSceneDelegate`
+  in Info.plist and lets it create the window, so the fix survives `expo prebuild`.
+- **Offline demo data.** If the backend can't be reached (not running, wrong address, 5 s timeout),
+  the app shows built-in demo events and a notice instead of an error; events created meanwhile are
+  kept in memory. Server errors (e.g. HTTP 500) are still shown as errors.
 - **HTTP.** The sample images and local backend are plain `http://`, so App Transport Security
   allows arbitrary loads in `app.json`. Remove that once everything is served over HTTPS.
 - **Backend fix.** `lastId()` in `backend/app/db/index.js` sorted with a boolean comparator,

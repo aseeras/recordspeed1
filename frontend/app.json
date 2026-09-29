@@ -31,7 +31,8 @@
     "plugins": [
       "expo-router",
       "@react-native-community/datetimepicker",
-      "expo-image"
+      "expo-image",
+      "./plugins/withSceneLifecycle"
     ],
     "scheme": "eventsboard"
   }
