@@ -15,7 +15,7 @@ An iOS app (Expo / React Native, TypeScript) for the events board described in t
 
 - Node.js 22.18 or newer, and npm
 - To run on an iPhone: the **Expo Go** app from the App Store
-- To run in the iOS Simulator: a Mac with Xcode
+- To run in the iOS Simulator or build with Xcode: a Mac with Xcode (see [Open and run it in Xcode](#open-and-run-it-in-xcode-mac))
 
 ## Run it
 
@@ -42,6 +42,49 @@ An iOS app (Expo / React Native, TypeScript) for the events board described in t
      ```bash
      EXPO_PUBLIC_API_URL=http://192.168.1.20:3000 npm start
      ```
+
+## Open and run it in Xcode (Mac)
+
+The native Xcode project is committed in `ios/`. Open **`ios/EventsBoard.xcworkspace`** (the
+workspace, not the `.xcodeproj`), because it includes the CocoaPods libraries.
+
+One-time setup:
+
+1. Install **Xcode** from the Mac App Store, open it once, and let it install the **iOS** platform
+   (simulator).
+2. Install [Node.js](https://nodejs.org) 22.18+ and CocoaPods: `brew install cocoapods`
+   (or `sudo gem install cocoapods`).
+3. Install the dependencies:
+
+   ```bash
+   cd frontend
+   npm install
+   cd ios && pod install && cd ..
+   ```
+
+4. Xcode runs Node to bundle the JavaScript. If Xcode can't find it (error mentioning
+   `NODE_BINARY` or `node: command not found`), run this once in `frontend/ios`:
+
+   ```bash
+   echo "export NODE_BINARY=$(command -v node)" > .xcode.env.local
+   ```
+
+Run it:
+
+1. Start the backend in a Terminal: `cd backend && npm install && npm start`.
+2. Open the workspace: `open ios/EventsBoard.xcworkspace`.
+3. In Xcode's toolbar, choose the **EventsBoard** scheme and an iPhone simulator (for example
+   *iPhone 16*), then press **▶ Run** (⌘R).
+
+The **Debug** configuration loads the JavaScript from the Metro dev server, which Xcode starts in a
+Terminal window automatically. If it doesn't, run `npm start` in `frontend/` yourself. To run on
+your own iPhone, plug it in, select it as the destination, and under **Signing & Capabilities** pick
+your Apple ID team. A free Apple ID is enough for your own device.
+
+`npm run ios` does all of the above (pods, build, launch the simulator) in one command.
+
+If you change `app.json` or add a library with native code, regenerate the project with
+`npx expo prebuild --platform ios`.
 
 ## Build an installable iOS app
 

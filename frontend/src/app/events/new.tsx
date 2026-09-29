@@ -1,4 +1,3 @@
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { Image } from 'expo-image';
 import { router, Stack } from 'expo-router';
 import { useState } from 'react';
@@ -15,6 +14,7 @@ import {
   type TextInputProps,
 } from 'react-native';
 
+import { DateTimeField } from '../../components/DateTimeField';
 import { createEvent } from '../../lib/api.ts';
 import {
   formatDisplayDate,
@@ -138,12 +138,7 @@ export default function NewEventScreen() {
           <View style={styles.field}>
             <Text style={styles.label}>Dates</Text>
             <View style={styles.pickerRow}>
-              <DateTimePicker
-                value={pickerValue}
-                mode="datetime"
-                display="compact"
-                onValueChange={(_event, date) => setPickerValue(date)}
-              />
+              <DateTimeField value={pickerValue} onChange={setPickerValue} />
               <Pressable accessibilityRole="button" onPress={addDate} style={styles.addDate}>
                 <Text style={styles.addDateLabel}>Add date</Text>
               </Pressable>

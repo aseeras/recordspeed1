@@ -37,5 +37,5 @@ yarn-error.*
 *.tsbuildinfo
 
 # generated native folders
-/ios
+# /ios is committed so the app can be opened directly in Xcode
 /android
